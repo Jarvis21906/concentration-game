@@ -6,6 +6,18 @@ import AttentionSwitching from './exercises/AttentionSwitching';
 import VisualTracking from './exercises/VisualTracking';
 import FocusMeditation from './exercises/FocusMeditation';
 
+// *** THE DEFINITIVE FIX - PART 1: A STABLE COMPONENT LOOKUP ***
+// This object is now defined OUTSIDE the main component function.
+// It is created only once, ensuring component references are stable.
+// This prevents React from unmounting and remounting exercises on every state change.
+const EXERCISES = {
+  focusMeditation: { Component: FocusMeditation },
+  sustainedAttention: { Component: SustainedAttention },
+  interferenceControl: { Component: InterferenceControl },
+  attentionSwitching: { Component: AttentionSwitching },
+  visualTracking: { Component: VisualTracking },
+};
+
 // --- Helper Components ---
 
 const GlassCard = ({ children, className = '' }) => (
@@ -62,41 +74,34 @@ export default function FocusTrainingApp() {
   const [streak, setStreak] = useState(0);
   const [sessionTime, setSessionTime] = useState(0);
 
-  const EXERCISES = {
-    focusMeditation: { Component: FocusMeditation },
-    sustainedAttention: { Component: SustainedAttention },
-    interferenceControl: { Component: InterferenceControl },
-    attentionSwitching: { Component: AttentionSwitching },
-    visualTracking: { Component: VisualTracking },
-  };
-
   useEffect(() => {
     let timer;
-    if (currentScreen !== 'menu') timer = setInterval(() => setSessionTime(t => t + 1), 1000);
+    // Only run the session timer if we are in an exercise
+    if (currentScreen !== 'menu') {
+      timer = setInterval(() => {
+        setSessionTime(t => t + 1);
+      }, 1000);
+    }
+    // Cleanup function ensures the timer is destroyed when we go back to the menu
     return () => clearInterval(timer);
   }, [currentScreen]);
 
-  // *** THE DEFINITIVE FIX - PART 1: A STABLE updateStats FUNCTION ***
-  // This function now has an empty dependency array `[]`.
-  // It will be created ONLY ONCE and its reference will never change.
-  // This breaks the chain reaction that was causing the auto-play bug.
   const updateStats = useCallback(({ scoreChange, streakChange }) => {
     if (streakChange === 'inc') {
-      // Use the functional form of setState to access the previous streak for the bonus.
       setStreak(prevStreak => {
-        const bonus = prevStreak; // The bonus is the streak *before* incrementing.
+        const bonus = prevStreak;
         setScore(prevScore => Math.max(0, prevScore + scoreChange + bonus));
         return prevStreak + 1;
       });
     } else {
       if (streakChange !== undefined) {
-        setStreak(streakChange); // Reset streak to 0 or another value
+        setStreak(streakChange);
       }
       if (scoreChange) {
         setScore(prevScore => Math.max(0, prevScore + scoreChange));
       }
     }
-  }, []); // Empty dependency array means this function is stable.
+  }, []);
 
   const resetProgress = () => { setScore(0); setStreak(0); setSessionTime(0); };
 

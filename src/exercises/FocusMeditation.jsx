@@ -53,9 +53,6 @@ export default function FocusMeditation() {
 
     const { initAudio, playBreathSound, playBackgroundSound, stopAllAudio, updateBackgroundVolume } = useMeditationAudio();
     
-    const phaseTimer = useRef(null);
-    const sessionTimer = useRef(null);
-
     const BREATH_CYCLE = {
         inhale: { next: 'hold', duration: 4000, text: 'Inhale...', circleColor: 'bg-sky-400', shadowColor: 'shadow-sky-300/50', scale: 'scale-110', bgGradient: 'from-sky-900/40 to-indigo-900/40' },
         hold: { next: 'exhale', duration: 2000, text: 'Hold', circleColor: 'bg-sky-300', shadowColor: 'shadow-sky-200/50', scale: 'scale-110', bgGradient: 'from-sky-900/40 to-indigo-900/40' },
@@ -76,54 +73,49 @@ export default function FocusMeditation() {
         }
     }
 
-    // This function only initializes and sets state now.
     const startSession = async (minutes) => {
         await initAudio();
         setTimeRemaining(minutes * 60);
-        setBreathPhase('inhale'); // Set initial phase
-        setGameState('running');  // This triggers the useEffects
+        setBreathPhase('inhale');
+        setGameState('running');
     };
     
-    // Cleanup effect for unmounting
+    // This master useEffect controls the entire session lifecycle.
     useEffect(() => {
-        return () => {
-            clearInterval(sessionTimer.current);
-            clearTimeout(phaseTimer.current);
+        if (gameState !== 'running') {
+            // If we are not running, ensure all audio is stopped.
             stopAllAudio();
-        };
-    }, [stopAllAudio]);
-    
-    // *** FIX: This useEffect now controls the entire session lifecycle ***
-    useEffect(() => {
-        if (gameState === 'running') {
-            // Start background and first breath sound
-            playBackgroundSound(selectedTrack, backgroundVolume);
-            playBreathSound(breathPhase);
-
-            // Set up the session timer
-            sessionTimer.current = setInterval(() => {
-                setTimeRemaining(t => {
-                    if (t <= 1) {
-                        setGameState('complete');
-                        return 0;
-                    }
-                    return t - 1;
-                });
-            }, 1000);
-
-            // Set up the breath cycle timer
-            const current = BREATH_CYCLE[breathPhase];
-            phaseTimer.current = setTimeout(() => {
-                setBreathPhase(current.next);
-            }, current.duration);
-        } else {
-            // Cleanup when gameState changes from 'running'
-            clearInterval(sessionTimer.current);
-            clearTimeout(phaseTimer.current);
-            stopAllAudio();
+            return;
         }
 
-    }, [gameState, breathPhase]); // This hook now perfectly syncs with the state
+        // --- If we ARE running ---
+        
+        playBackgroundSound(selectedTrack, backgroundVolume);
+        playBreathSound(breathPhase);
+
+        // Set up the session timer
+        const sessionTimer = setInterval(() => {
+            setTimeRemaining(t => {
+                if (t <= 1) {
+                    setGameState('complete');
+                    return 0;
+                }
+                return t - 1;
+            });
+        }, 1000);
+
+        // Set up the breath cycle timer
+        const current = BREATH_CYCLE[breathPhase];
+        const phaseTimer = setTimeout(() => {
+            setBreathPhase(current.next);
+        }, current.duration);
+
+        // The cleanup function is now robust. It runs when gameState changes or when the component unmounts.
+        return () => {
+            clearInterval(sessionTimer);
+            clearTimeout(phaseTimer);
+        };
+    }, [gameState, breathPhase, selectedTrack, backgroundVolume, playBackgroundSound, playBreathSound, stopAllAudio]);
 
     if (gameState === 'selection' || gameState === 'complete') {
         return (
@@ -139,7 +131,6 @@ export default function FocusMeditation() {
                         <p className="mb-6">Select a duration for your session.</p>
                     </>
                 )}
-
                 <div className="flex space-x-4">
                     {[1, 5, 10, 15].map(min => (
                         <button key={min} onClick={() => startSession(min)} className="px-6 py-2 bg-sky-500 hover:bg-sky-600 rounded-lg font-semibold transition-colors">{min} Min</button>
@@ -164,7 +155,6 @@ export default function FocusMeditation() {
     return (
         <div className="w-full flex flex-col h-[500px] relative">
              <div className={`absolute inset-0 transition-all duration-1000 bg-gradient-to-br ${currentPhase.bgGradient} rounded-xl`}></div>
-             
              <div className="relative z-10 flex-grow flex flex-col items-center justify-center text-center p-4">
                 <p className="text-xl font-mono mb-2 text-gray-300">
                     {formatTime(timeRemaining)}
@@ -177,7 +167,6 @@ export default function FocusMeditation() {
                     style={{ animationDuration: '4s', transitionDuration: `${currentPhase.duration}ms` }}
                 />
              </div>
-             
              <div className="relative z-10 pb-4">
                 <SoundscapeControls 
                     selectedTrack={selectedTrack}

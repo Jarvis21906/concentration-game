@@ -34,7 +34,7 @@ export default function SustainedAttention({ updateStats }) {
     timerRef.current = setTimeout(() => {
       setTarget(null);
       setMisses(prev => prev + 1);
-      updateStats({ score: -10, streak: 0 });
+      updateStats({ scoreChange: -10, streakChange: 0 });
       scheduleNextTarget(); 
     }, 2000);
   }, [updateStats, scheduleNextTarget]);
@@ -44,7 +44,7 @@ export default function SustainedAttention({ updateStats }) {
     clearTimeout(timerRef.current);
     const reactionTime = (Date.now() - targetAppearTimeRef.current) / 1000;
     const points = Math.max(1, Math.round(20 - reactionTime * 10));
-    updateStats({ score: points, streak: 'inc' });
+    updateStats({ scoreChange: points, streakChange: 'inc' });
     setTarget(null);
     scheduleNextTarget();
   };

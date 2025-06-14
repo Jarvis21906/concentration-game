@@ -58,7 +58,7 @@ export default function VisualTracking({ updateStats }) {
         });
         const isPerfect = correctSelections === numTargets && incorrectSelections === 0;
         const points = (correctSelections * 20) - (incorrectSelections * 10) + (isPerfect ? 50 : 0);
-        updateStats({ score: points, streak: isPerfect ? 'inc' : 0 });
+        updateStats({ scoreChange: points, streakChange: isPerfect ? 'inc' : 0 });
         setFeedback(`You found ${correctSelections} of ${numTargets} targets! ${isPerfect ? "+50 Perfect Bonus!" : ""}`);
         if(isPerfect) setLevel(l => l + 1);
         setPhase('result');

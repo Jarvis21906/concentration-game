@@ -37,10 +37,10 @@ export default function AttentionSwitching({ updateStats }) {
     const isCorrect = currentTask.check(currentStimulus);
     if (userAnswer === isCorrect) {
       setFeedback('Correct!');
-      updateStats({ score: 20, streak: 'inc' });
+      updateStats({ scoreChange: 20, streakChange: 'inc' });
     } else {
       setFeedback('Incorrect');
-      updateStats({ score: -10, streak: 0 });
+      updateStats({ scoreChange: -10, streakChange: 0 });
     }
     
     setTimeout(() => {
