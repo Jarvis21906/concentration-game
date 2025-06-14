@@ -76,14 +76,27 @@ export default function FocusTrainingApp() {
     return () => clearInterval(timer);
   }, [currentScreen]);
 
-  const updateStats = useCallback(({ score: scoreChange, streak: streakChange }) => {
-    if (scoreChange) {
-        const bonus = streakChange === 'inc' ? streak : 0;
-        setScore(s => Math.max(0, s + scoreChange + bonus));
+  // *** THE DEFINITIVE FIX - PART 1: A STABLE updateStats FUNCTION ***
+  // This function now has an empty dependency array `[]`.
+  // It will be created ONLY ONCE and its reference will never change.
+  // This breaks the chain reaction that was causing the auto-play bug.
+  const updateStats = useCallback(({ scoreChange, streakChange }) => {
+    if (streakChange === 'inc') {
+      // Use the functional form of setState to access the previous streak for the bonus.
+      setStreak(prevStreak => {
+        const bonus = prevStreak; // The bonus is the streak *before* incrementing.
+        setScore(prevScore => Math.max(0, prevScore + scoreChange + bonus));
+        return prevStreak + 1;
+      });
+    } else {
+      if (streakChange !== undefined) {
+        setStreak(streakChange); // Reset streak to 0 or another value
+      }
+      if (scoreChange) {
+        setScore(prevScore => Math.max(0, prevScore + scoreChange));
+      }
     }
-    if (streakChange === 'inc') setStreak(s => s + 1);
-    else if (streakChange !== undefined) setStreak(streakChange);
-  }, [streak]);
+  }, []); // Empty dependency array means this function is stable.
 
   const resetProgress = () => { setScore(0); setStreak(0); setSessionTime(0); };
 
@@ -107,7 +120,6 @@ export default function FocusTrainingApp() {
               </div>
               <StatDisplay score={score} session={sessionTime} streak={streak} />
               <div className="space-y-4">
-                {/* *** FIX: Reordered to put Meditation first *** */}
                 <MainMenuButton icon={<IoBodyOutline />} title="Focus Meditation" description="Guided breathing exercises" benefit="Builds baseline attention and mindfulness" onClick={() => setCurrentScreen('focusMeditation')} />
                 <MainMenuButton icon={<IoEyeOutline />} title="Sustained Attention" description="Maintain focus on rare targets" benefit="Improves vigilance and sustained concentration" onClick={() => setCurrentScreen('sustainedAttention')} />
                 <MainMenuButton icon={<IoGitNetworkOutline />} title="Interference Control" description="Ignore distracting information" benefit="Enhances ability to filter distractions" onClick={() => setCurrentScreen('interferenceControl')} />
