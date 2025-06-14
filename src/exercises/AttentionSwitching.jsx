@@ -1,23 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
+const STIMULI = {
+  colors: { red: { type: 'primary', className: 'bg-red-500' }, blue: { type: 'primary', className: 'bg-blue-500' }, green: { type: 'secondary', className: 'bg-green-500' }, yellow: { type: 'secondary', className: 'bg-yellow-500' } },
+  shapes: { circle: { type: 'curved', className: 'rounded-full' }, square: { type: 'angular', className: 'rounded-md' } },
+  sizes: { small: { type: 'small', className: 'w-20 h-20' }, large: { type: 'large', className: 'w-32 h-32' } }
+};
+const TASKS = [
+  { type: 'Color', ruleText: 'Is the color PRIMARY?', check: (s) => STIMULI.colors[s.color].type === 'primary' },
+  { type: 'Color', ruleText: 'Is the color SECONDARY?', check: (s) => STIMULI.colors[s.color].type === 'secondary' },
+  { type: 'Shape', ruleText: 'Is the shape CURVED?', check: (s) => STIMULI.shapes[s.shape].type === 'curved' },
+  { type: 'Shape', ruleText: 'Is the shape ANGULAR?', check: (s) => STIMULI.shapes[s.shape].type === 'angular' },
+  { type: 'Size', ruleText: 'Is the size LARGE?', check: (s) => STIMULI.sizes[s.size].type === 'large' },
+  { type: 'Size', ruleText: 'Is the size SMALL?', check: (s) => STIMULI.sizes[s.size].type === 'small' },
+];
+
 export default function AttentionSwitching({ updateStats }) {
   const [currentTask, setCurrentTask] = useState(null);
   const [currentStimulus, setCurrentStimulus] = useState(null);
   const [feedback, setFeedback] = useState('');
   const [isWaiting, setIsWaiting] = useState(true);
-  const STIMULI = {
-    colors: { red: { type: 'primary', className: 'bg-red-500' }, blue: { type: 'primary', className: 'bg-blue-500' }, green: { type: 'secondary', className: 'bg-green-500' }, yellow: { type: 'secondary', className: 'bg-yellow-500' } },
-    shapes: { circle: { type: 'curved', className: 'rounded-full' }, square: { type: 'angular', className: 'rounded-md' } },
-    sizes: { small: { type: 'small', className: 'w-20 h-20' }, large: { type: 'large', className: 'w-32 h-32' } }
-  };
-  const TASKS = [
-    { type: 'Color', ruleText: 'Is the color PRIMARY?', check: (s) => STIMULI.colors[s.color].type === 'primary' },
-    { type: 'Color', ruleText: 'Is the color SECONDARY?', check: (s) => STIMULI.colors[s.color].type === 'secondary' },
-    { type: 'Shape', ruleText: 'Is the shape CURVED?', check: (s) => STIMULI.shapes[s.shape].type === 'curved' },
-    { type: 'Shape', ruleText: 'Is the shape ANGULAR?', check: (s) => STIMULI.shapes[s.shape].type === 'angular' },
-    { type: 'Size', ruleText: 'Is the size LARGE?', check: (s) => STIMULI.sizes[s.size].type === 'large' },
-    { type: 'Size', ruleText: 'Is the size SMALL?', check: (s) => STIMULI.sizes[s.size].type === 'small' },
-  ];
 
   const generateNewProblem = useCallback(() => {
     setFeedback('');
@@ -27,11 +28,12 @@ export default function AttentionSwitching({ updateStats }) {
     setCurrentTask(task);
     setCurrentStimulus(stimulus);
     setIsWaiting(false);
-  }, [TASKS, STIMULI]);
+  }, []);
 
-  const handleResponse = (userAnswer) => { 
+  const handleResponse = useCallback((userAnswer) => { 
     if (isWaiting) return;
     setIsWaiting(true);
+
     const isCorrect = currentTask.check(currentStimulus);
     if (userAnswer === isCorrect) {
       setFeedback('Correct!');
@@ -40,10 +42,15 @@ export default function AttentionSwitching({ updateStats }) {
       setFeedback('Incorrect');
       updateStats({ score: -10, streak: 0 });
     }
-    setTimeout(generateNewProblem, 1000);
-  };
+    
+    setTimeout(() => {
+        generateNewProblem();
+    }, 1000);
+  }, [isWaiting, currentTask, currentStimulus, updateStats, generateNewProblem]);
 
-  useEffect(() => { generateNewProblem(); }, [generateNewProblem]);
+  useEffect(() => {
+    generateNewProblem();
+  }, [generateNewProblem]);
 
   return (
     <div className="w-full text-center">
