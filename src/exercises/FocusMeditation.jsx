@@ -50,6 +50,9 @@ export default function FocusMeditation() {
     const [breathPhase, setBreathPhase] = useState('pause'); 
     const [selectedTrack, setSelectedTrack] = useState('none');
     const [backgroundVolume, setBackgroundVolume] = useState(0.5);
+    const [isAudioInitialized, setIsAudioInitialized] = useState(false);
+    const [showAudioPrompt, setShowAudioPrompt] = useState(false);
+    const audioInitAttempted = useRef(false);
 
     const { initAudio, playBreathSound, playBackgroundSound, stopAllAudio, updateBackgroundVolume } = useMeditationAudio();
     
@@ -68,18 +71,58 @@ export default function FocusMeditation() {
     
     const handleTrackSelect = (track) => {
         setSelectedTrack(track);
-        if (gameState === 'running') {
+        if (gameState === 'running' && isAudioInitialized) {
             playBackgroundSound(track, backgroundVolume);
         }
     }
 
+    const initializeAudio = async () => {
+        if (audioInitAttempted.current) return;
+        audioInitAttempted.current = true;
+        
+        try {
+            await initAudio();
+            setIsAudioInitialized(true);
+            setShowAudioPrompt(false);
+            // Play a silent sound to unlock audio
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            oscillator.connect(audioContext.destination);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.001);
+        } catch (error) {
+            console.error('Failed to initialize audio:', error);
+            setShowAudioPrompt(true);
+        }
+    };
+
     const startSession = async (minutes) => {
-        await initAudio();
+        if (!isAudioInitialized) {
+            await initializeAudio();
+        }
         setTimeRemaining(minutes * 60);
         setBreathPhase('inhale');
         setGameState('running');
     };
     
+    // Handle user interaction for audio
+    const handleUserInteraction = useCallback(() => {
+        if (!isAudioInitialized) {
+            initializeAudio();
+        }
+    }, [isAudioInitialized]);
+
+    useEffect(() => {
+        // Add event listeners for user interaction
+        document.addEventListener('touchstart', handleUserInteraction);
+        document.addEventListener('click', handleUserInteraction);
+        
+        return () => {
+            document.removeEventListener('touchstart', handleUserInteraction);
+            document.removeEventListener('click', handleUserInteraction);
+        };
+    }, [handleUserInteraction]);
+
     // This master useEffect controls the entire session lifecycle.
     useEffect(() => {
         if (gameState !== 'running') {
@@ -129,11 +172,22 @@ export default function FocusMeditation() {
                     <>
                         <h2 className="text-2xl font-bold mb-4">Focus Meditation</h2>
                         <p className="mb-6">Select a duration for your session.</p>
+                        {showAudioPrompt && (
+                            <div className="mb-4 p-4 bg-yellow-500/20 rounded-lg">
+                                <p className="text-yellow-300">Tap anywhere to enable sound</p>
+                            </div>
+                        )}
                     </>
                 )}
                 <div className="flex space-x-4">
                     {[1, 5, 10, 15].map(min => (
-                        <button key={min} onClick={() => startSession(min)} className="px-6 py-2 bg-sky-500 hover:bg-sky-600 rounded-lg font-semibold transition-colors">{min} Min</button>
+                        <button 
+                            key={min} 
+                            onClick={() => startSession(min)} 
+                            className="px-6 py-2 bg-sky-500 hover:bg-sky-600 rounded-lg font-semibold transition-colors"
+                        >
+                            {min} Min
+                        </button>
                     ))}
                 </div>
                 <div className="mt-8 pt-6 border-t border-white/10 w-full">
