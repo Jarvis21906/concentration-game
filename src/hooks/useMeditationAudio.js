@@ -1,3 +1,5 @@
+// src/hooks/useMeditationAudio.js
+
 import { useRef, useCallback } from 'react';
 
 // This custom hook encapsulates all Web Audio API logic for the meditation exercise.
@@ -7,31 +9,78 @@ export const useMeditationAudio = () => {
         breathOscillator: null,
         backgroundNodes: {},
         backgroundInterval: null,
+        unlockInterval: null,
     });
 
-    const stopAllAudio = useCallback(() => {
-        const { context, breathOscillator, backgroundNodes, backgroundInterval } = audioRef.current;
-        if (!context) return;
+    // NEW FUNCTION: Stops only the background audio elements
+    const stopBackgroundAudio = useCallback(() => {
+        const { backgroundNodes, backgroundInterval } = audioRef.current;
         
-        if (breathOscillator) {
-            try { breathOscillator.stop(); } catch (e) { /* Already stopped */ }
-        }
+        // Stop and cleanup background audio source
         if (backgroundNodes.source) {
-            try { backgroundNodes.source.stop(); } catch (e) { /* Already stopped */ }
-            Object.values(backgroundNodes).forEach(node => node.disconnect());
+            try { 
+                backgroundNodes.source.stop(); 
+                backgroundNodes.source.disconnect();
+            } catch (e) { /* Already stopped */ }
         }
+        
+        // Disconnect and cleanup all background nodes
+        Object.values(backgroundNodes).forEach(node => {
+            if (node && typeof node.disconnect === 'function') {
+                try { node.disconnect(); } catch(e) {}
+            }
+        });
+
+        // Clear background interval
         if (backgroundInterval) clearInterval(backgroundInterval);
 
+        // Reset background-specific state
         audioRef.current.backgroundNodes = {};
         audioRef.current.backgroundInterval = null;
-        audioRef.current.breathOscillator = null;
     }, []);
+
+
+    const stopAllAudio = useCallback(() => {
+        const { context, breathOscillator, unlockInterval } = audioRef.current;
+        if (!context) return;
+        
+        // Use our new function to handle the background part
+        stopBackgroundAudio();
+        
+        // Stop breath oscillator
+        if (breathOscillator) {
+            try { 
+                breathOscillator.stop(); 
+                breathOscillator.disconnect();
+            } catch (e) { /* Already stopped */ }
+        }
+
+        // Clear the unlock interval
+        if (unlockInterval) clearInterval(unlockInterval);
+
+        // Reset all audio state
+        audioRef.current.breathOscillator = null;
+        audioRef.current.unlockInterval = null;
+
+        // Suspend the audio context to ensure complete stop
+        try {
+            if (context.state !== 'suspended') {
+                context.suspend();
+            }
+        } catch (e) {
+            console.error('Error suspending audio context:', e);
+        }
+    }, [stopBackgroundAudio]); // dependency added
 
     const playBreathSound = useCallback((phase) => {
         const { context } = audioRef.current;
-        if (!context || context.state !== 'running') return;
+        if (!context) return;
         
         try {
+            if (context.state === 'suspended') {
+                context.resume();
+            }
+
             const now = context.currentTime;
 
             if (audioRef.current.breathOscillator) { 
@@ -49,6 +98,7 @@ export const useMeditationAudio = () => {
                 gainNode.gain.setValueAtTime(0.25, now);
                 gainNode.gain.linearRampToValueAtTime(0, now + 4);
                 
+                // IMPORTANT: Connect the breath sound to the main destination, not through the BGM gain
                 oscillator.connect(gainNode).connect(context.destination);
                 oscillator.start(now);
                 audioRef.current.breathOscillator = oscillator;
@@ -60,9 +110,14 @@ export const useMeditationAudio = () => {
     
     const playBackgroundSound = useCallback((track, volume) => {
         try {
-            stopAllAudio(); 
+            // CHANGED: Use the more specific stop function
+            stopBackgroundAudio(); 
             const { context } = audioRef.current;
-            if (track === 'none' || !context || context.state !== 'running') return;
+            if (track === 'none' || !context) return;
+
+            if (context.state === 'suspended') {
+                context.resume();
+            }
 
             const now = context.currentTime;
             const mainGain = context.createGain();
@@ -109,7 +164,7 @@ export const useMeditationAudio = () => {
                     const chirp = context.createOscillator();
                     const chirpGain = context.createGain();
                     chirp.frequency.setValueAtTime(1000 + Math.random() * 500, context.currentTime);
-                    chirpGain.gain.setValueAtTime(0.2 * volume, context.currentTime); // Scale chirp with main volume
+                    chirpGain.gain.setValueAtTime(0.2 * volume, context.currentTime);
                     chirpGain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.2);
                     chirp.connect(chirpGain).connect(mainGain);
                     chirp.start();
@@ -121,7 +176,7 @@ export const useMeditationAudio = () => {
             if (track === 'cosmic') {
                 const drone = context.createOscillator();
                 drone.type = 'sine';
-                drone.frequency.setValueAtTime(60, now); // Deep hum
+                drone.frequency.setValueAtTime(60, now);
                 drone.connect(mainGain);
                 drone.start(now);
                 audioRef.current.backgroundNodes.source = drone;
@@ -131,7 +186,7 @@ export const useMeditationAudio = () => {
                     const sparkleGain = context.createGain();
                     sparkle.type = 'square';
                     sparkle.frequency.setValueAtTime(1200 + Math.random() * 800, context.currentTime);
-                    sparkleGain.gain.setValueAtTime(0.1 * volume, context.currentTime); // Scale sparkle with main volume
+                    sparkleGain.gain.setValueAtTime(0.1 * volume, context.currentTime);
                     sparkleGain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.1);
                     sparkle.connect(sparkleGain).connect(mainGain);
                     sparkle.start();
@@ -142,12 +197,15 @@ export const useMeditationAudio = () => {
         } catch (error) {
             console.error('Error playing background sound:', error);
         }
-    }, [stopAllAudio]);
+    }, [stopBackgroundAudio]); // dependency added
 
     const updateBackgroundVolume = useCallback((newVolume) => {
         try {
             const { backgroundNodes, context } = audioRef.current;
             if (backgroundNodes.gain && context) {
+                if (context.state === 'suspended') {
+                    context.resume();
+                }
                 backgroundNodes.gain.gain.linearRampToValueAtTime(newVolume, context.currentTime + 0.1);
             }
         } catch (error) {
@@ -162,17 +220,28 @@ export const useMeditationAudio = () => {
                 audioRef.current.context = new AudioContext();
             }
             
-            if (audioRef.current.context.state === 'suspended') {
-                await audioRef.current.context.resume();
+            const context = audioRef.current.context;
+            if (context.state === 'suspended') {
+                await context.resume();
             }
-
-            // Create and play a silent sound to unlock audio
-            const oscillator = audioRef.current.context.createOscillator();
-            const gainNode = audioRef.current.context.createGain();
-            gainNode.gain.setValueAtTime(0, audioRef.current.context.currentTime);
-            oscillator.connect(gainNode).connect(audioRef.current.context.destination);
+            
+            // This silent sound part is a good robust way to handle browser policies.
+            const oscillator = context.createOscillator();
+            const gainNode = context.createGain();
+            gainNode.gain.setValueAtTime(0, context.currentTime);
+            oscillator.connect(gainNode).connect(context.destination);
             oscillator.start();
-            oscillator.stop(audioRef.current.context.currentTime + 0.001);
+            oscillator.stop(context.currentTime + 0.001);
+            
+            if (audioRef.current.unlockInterval) clearInterval(audioRef.current.unlockInterval);
+
+            const unlockInterval = setInterval(() => {
+                if (context.state === 'suspended') {
+                    context.resume();
+                }
+            }, 5000);
+
+            audioRef.current.unlockInterval = unlockInterval;
         } catch (error) {
             console.error('Error initializing audio:', error);
             throw error;

@@ -1,9 +1,12 @@
+// src/exercises/FocusMeditation.jsx
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMeditationAudio } from '../hooks/useMeditationAudio';
 import { IoRainyOutline, IoLeafOutline, IoSparklesOutline, IoVolumeMuteOutline, IoVolumeMediumOutline } from 'react-icons/io5';
 import { TbWaveSine } from 'react-icons/tb';
 
 const SoundscapeControls = ({ onTrackSelect, onVolumeChange, selectedTrack, backgroundVolume }) => {
+    // ... (This component is unchanged, so I've collapsed it for brevity)
     const SOUNDSCAPES = [
         { key: 'none', name: 'None', icon: <IoVolumeMuteOutline /> },
         { key: 'rain', name: 'Rain', icon: <IoRainyOutline /> },
@@ -52,6 +55,7 @@ export default function FocusMeditation() {
     const [backgroundVolume, setBackgroundVolume] = useState(0.5);
     const [isAudioInitialized, setIsAudioInitialized] = useState(false);
     const [showAudioPrompt, setShowAudioPrompt] = useState(false);
+    const [audioState, setAudioState] = useState('initializing');
     const audioInitAttempted = useRef(false);
 
     const { initAudio, playBreathSound, playBackgroundSound, stopAllAudio, updateBackgroundVolume } = useMeditationAudio();
@@ -66,35 +70,32 @@ export default function FocusMeditation() {
     const handleVolumeChange = (e) => {
         const newVolume = parseFloat(e.target.value);
         setBackgroundVolume(newVolume);
-        updateBackgroundVolume(newVolume);
+        // We no longer need to call updateBackgroundVolume here directly,
+        // the new useEffect will handle it.
     };
     
     const handleTrackSelect = (track) => {
         setSelectedTrack(track);
-        if (gameState === 'running' && isAudioInitialized) {
-            playBackgroundSound(track, backgroundVolume);
-        }
+        // No need to call playBackgroundSound here anymore,
+        // the new useEffect will react to the state change.
     }
 
-    const initializeAudio = async () => {
-        if (audioInitAttempted.current) return;
+    const initializeAudio = useCallback(async () => {
+        if (audioInitAttempted.current || isAudioInitialized) return;
         audioInitAttempted.current = true;
+        setAudioState('initializing');
         
         try {
             await initAudio();
             setIsAudioInitialized(true);
             setShowAudioPrompt(false);
-            // Play a silent sound to unlock audio
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            oscillator.connect(audioContext.destination);
-            oscillator.start();
-            oscillator.stop(audioContext.currentTime + 0.001);
+            setAudioState('ready');
         } catch (error) {
             console.error('Failed to initialize audio:', error);
             setShowAudioPrompt(true);
+            setAudioState('error');
         }
-    };
+    }, [initAudio, isAudioInitialized]);
 
     const startSession = async (minutes) => {
         if (!isAudioInitialized) {
@@ -105,15 +106,13 @@ export default function FocusMeditation() {
         setGameState('running');
     };
     
-    // Handle user interaction for audio
-    const handleUserInteraction = useCallback(() => {
-        if (!isAudioInitialized) {
-            initializeAudio();
-        }
-    }, [isAudioInitialized]);
-
+    // This effect is fine as is
     useEffect(() => {
-        // Add event listeners for user interaction
+        const handleUserInteraction = () => {
+            if (!isAudioInitialized) {
+                initializeAudio();
+            }
+        };
         document.addEventListener('touchstart', handleUserInteraction);
         document.addEventListener('click', handleUserInteraction);
         
@@ -121,22 +120,17 @@ export default function FocusMeditation() {
             document.removeEventListener('touchstart', handleUserInteraction);
             document.removeEventListener('click', handleUserInteraction);
         };
-    }, [handleUserInteraction]);
+    }, [isAudioInitialized, initializeAudio]);
+    
+    // --- REFACTORED useEffects START ---
 
-    // This master useEffect controls the entire session lifecycle.
+    // Effect for managing the session timer and overall state
     useEffect(() => {
         if (gameState !== 'running') {
-            // If we are not running, ensure all audio is stopped.
             stopAllAudio();
             return;
         }
 
-        // --- If we ARE running ---
-        
-        playBackgroundSound(selectedTrack, backgroundVolume);
-        playBreathSound(breathPhase);
-
-        // Set up the session timer
         const sessionTimer = setInterval(() => {
             setTimeRemaining(t => {
                 if (t <= 1) {
@@ -147,18 +141,49 @@ export default function FocusMeditation() {
             });
         }, 1000);
 
-        // Set up the breath cycle timer
+        return () => {
+            clearInterval(sessionTimer);
+        };
+    }, [gameState, stopAllAudio]);
+
+    // Effect for managing the breath cycle (phase changes and sounds)
+    useEffect(() => {
+        if (gameState !== 'running') return;
+        
+        playBreathSound(breathPhase);
+
         const current = BREATH_CYCLE[breathPhase];
         const phaseTimer = setTimeout(() => {
             setBreathPhase(current.next);
         }, current.duration);
 
-        // The cleanup function is now robust. It runs when gameState changes or when the component unmounts.
         return () => {
-            clearInterval(sessionTimer);
             clearTimeout(phaseTimer);
         };
-    }, [gameState, breathPhase, selectedTrack, backgroundVolume, playBackgroundSound, playBreathSound, stopAllAudio]);
+    }, [gameState, breathPhase, playBreathSound]);
+    
+    // Effect for managing the background audio
+    useEffect(() => {
+        if (gameState !== 'running' || !isAudioInitialized) return;
+
+        playBackgroundSound(selectedTrack, backgroundVolume);
+
+    }, [gameState, selectedTrack, backgroundVolume, isAudioInitialized, playBackgroundSound]);
+
+    // Effect for updating volume smoothly without restarting the track
+    useEffect(() => {
+        if (gameState !== 'running' || !isAudioInitialized) return;
+        updateBackgroundVolume(backgroundVolume);
+    }, [backgroundVolume, gameState, isAudioInitialized, updateBackgroundVolume]);
+
+    // --- REFACTORED useEffects END ---
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            stopAllAudio();
+        };
+    }, [stopAllAudio]);
 
     if (gameState === 'selection' || gameState === 'complete') {
         return (
@@ -177,6 +202,16 @@ export default function FocusMeditation() {
                                 <p className="text-yellow-300">Tap anywhere to enable sound</p>
                             </div>
                         )}
+                        {audioState === 'initializing' && !isAudioInitialized && (
+                            <div className="mb-4 p-4 bg-blue-500/20 rounded-lg">
+                                <p className="text-blue-300">Initializing audio...</p>
+                            </div>
+                        )}
+                        {audioState === 'error' && (
+                            <div className="mb-4 p-4 bg-red-500/20 rounded-lg">
+                                <p className="text-red-300">Audio initialization failed. Please click to try again.</p>
+                            </div>
+                        )}
                     </>
                 )}
                 <div className="flex space-x-4">
@@ -184,7 +219,8 @@ export default function FocusMeditation() {
                         <button 
                             key={min} 
                             onClick={() => startSession(min)} 
-                            className="px-6 py-2 bg-sky-500 hover:bg-sky-600 rounded-lg font-semibold transition-colors"
+                            className="px-6 py-2 bg-sky-500 hover:bg-sky-600 rounded-lg font-semibold transition-colors disabled:bg-gray-500"
+                            disabled={!isAudioInitialized && audioState !== 'ready'}
                         >
                             {min} Min
                         </button>
